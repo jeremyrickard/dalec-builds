@@ -8,6 +8,12 @@ on:
       target:
         required: true
         default: azlinux3/container
+      tags:
+        required: false
+        default: latest
+      imageName:
+        required: false
+        default: kubectl
 jobs:
   build:
     permissions:
@@ -25,4 +31,4 @@ jobs:
         with:
           spec: ${{ inputs.spec }}
           target: ${{ inputs.target }}
-          image: ghcr.io/${{ github.repository }}:latest
+          image: ghcr.io/${{ github.repository }}/${{ inputs.imageName }}:${{ inputs.tags }}
