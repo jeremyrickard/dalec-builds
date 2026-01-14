@@ -25,5 +25,3 @@ runs:
         platforms: ${{ inputs.platforms }}
         push: ${{ inputs.push }}
         tags: ${{ inputs.image }}
-        build-args: |
-          BUILDKIT_SYNTAX=ghcr.io/project-dalec/dalec:latest
