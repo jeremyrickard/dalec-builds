@@ -1,0 +1,170 @@
+# syntax=ghcr.io/project-dalec/dalec/frontend:0.20
+
+args:
+  VERSION: 1.13.2
+  REVISION: 3
+  COMMIT: 0233f3e7c600b730426628f2cf9c829d404a181f
+
+name: kubernetes-coredns
+packager: Jeremy Rickard
+vendor: McGuffin Corp
+license: Apache-2.0
+website: https://github.com/coredns/coredns
+description: CoreDNS is a DNS server/forwarder, that chains plugins. Each plugin performs a (DNS) function.
+
+version: ${VERSION}
+revision: ${REVISION}
+
+sources:
+  coredns:
+    generate:
+      - gomod: {}
+    git:
+      url: https://github.com/coredns/coredns.git
+      commit: ${COMMIT}
+  coredns-cve-patches:
+    context: {}
+    includes:
+      - specs/coredns/patches/${VERSION}
+
+x-vars:
+  msft-key: &msft-key
+    msft.asc:
+      http:
+        url: https://packages.microsoft.com/keys/microsoft.asc
+        digest: sha256:2fa9c05d591a1582a9aba276272478c262e95ad00acf60eaee1644d93941e3c6
+        permissions: 0o644
+  msft-repo-envs: &msft-repo-envs
+    - build
+
+targets:
+  azlinux3:
+    dependencies:
+      build:
+        msft-golang:
+          version:
+            - ">= 1.25.5"
+        git:
+        make:
+        gcc:
+      runtime:
+        openssl-libs:
+        SymCrypt:
+        SymCrypt-OpenSSL:
+  focal:
+    dependencies:
+      build:
+        msft-golang:
+          version:
+            - ">= 1.25.5"
+        git:
+        make:
+        gcc:
+      runtime:
+        libssl1.1:
+      extra_repos:
+        - keys: *msft-key
+          config:
+            microsoft-prod.list:
+              inline:
+                file:
+                  contents: deb [arch=amd64,arm64,armhf signed-by=/usr/share/keyrings/msft.asc] https://packages.microsoft.com/ubuntu/20.04/prod focal main
+          envs: *msft-repo-envs
+  jammy:
+    dependencies:
+      build:
+        msft-golang:
+          version:
+            - ">= 1.25.5"
+        git:
+        make:
+        gcc:
+      runtime:
+        libssl3:
+      extra_repos:
+        - keys: *msft-key
+          config:
+            microsoft-prod.list:
+              inline:
+                file:
+                  contents: deb [arch=amd64,arm64,armhf signed-by=/usr/share/keyrings/msft.asc] https://packages.microsoft.com/ubuntu/22.04/prod jammy main
+          envs: *msft-repo-envs
+  noble:
+    dependencies:
+      build:
+        msft-golang:
+          version:
+            - ">= 1.25.5"
+        git:
+        make:
+        gcc:
+      runtime:
+        libssl3:
+      extra_repos:
+        - keys: *msft-key
+          config:
+            microsoft-prod.list:
+              inline:
+                file:
+                  contents: deb [arch=amd64,arm64,armhf signed-by=/usr/share/keyrings/msft.asc] https://packages.microsoft.com/ubuntu/24.04/prod noble main
+          envs: *msft-repo-envs
+
+dependencies:
+  build:
+    msft-golang:
+      version:
+        - ">= 1.25.5"
+  runtime:
+    openssl-libs:
+patches:
+  coredns:
+    - source: coredns-cve-patches
+      path: specs/coredns/patches/${VERSION}/coredns-cves.patch
+build:
+  env:
+    VERSION: ${VERSION}
+    GOPROXY: direct
+    GOEXPERIMENT: systemcrypto
+    CGO_ENABLED: "1"
+    GITCOMMIT: ${COMMIT}
+  steps:
+    - command: |
+        set -e
+        cd coredns
+        go build -v -ldflags="-s -w -X github.com/coredns/coredns/coremain.GitCommit=${GITCOMMIT}" -o bin/coredns .
+
+artifacts:
+  binaries:
+    coredns/bin/coredns: {}
+  licenses:
+    coredns/LICENSE: {}
+
+tests:
+  - name: Check files
+    files:
+      /usr/bin/coredns:
+        permissions: 0755
+  - name: Check coredns version and commitId
+    steps:
+      - command: /usr/bin/coredns --version
+        stdout:
+          contains:
+            - "${COMMIT}"
+            - "${VERSION}"
+
+image:
+  entrypoint: /usr/bin/coredns
+
+changelog:
+  - date: "2026-01-06"
+    author: Sri Harsha <sharsha@microsoft.com>
+    changes:
+      - Add package build targets (azlinux3/rpm, focal/deb, jammy/deb, noble/deb)
+  - date: "2026-01-03"
+    author: Venkata Ashok Kumar Obulapuram <vobulapuram@microsoft.com>
+    changes:
+      - "Fix CVE-2025-68156 in github.com/expr-lang/expr"
+  - date: "2025-12-22"
+    author: Venkata Ashok Kumar Obulapuram <vobulapuram@microsoft.com>
+    changes:
+      - Adding coredns spec for 1.13.2 release.
