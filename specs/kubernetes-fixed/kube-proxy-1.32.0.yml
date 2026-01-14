@@ -3,74 +3,47 @@
 args:
     VERSION: 1.32.0
     COMMIT: 70d3cc986aa8221cd1dfb1121852688902d3bf53
-    REVISION: 3
-    RELEASE_COMMIT: 3f5200e5d2f186e5604f50cebb0b1c34cb260e66
+    REVISION: 5
     TARGETOS:
     TARGETARCH:
-name: kubectl
+name: kube-proxy
 packager: Jeremy Rickard
 vendor: Mcguffin Corp
 license: Apache-2.0
 website: https://github.com/kubernetes/kubernetes
-description: Command-line utility for interacting with a Kubernetes cluster
+description: Kubernetes Kube Proxy
 version: ${VERSION}
 revision: ${REVISION}
 sources:
     kubernetes:
         generate:
-            - gomod: {}
+            - gomod:
+                 edits:
+                    replace:
+                        - "golang.org/x/oauth2@v0.23.0 => golang.org/x/oauth2@v0.27.0"
         git:
             url: https://github.com/kubernetes/kubernetes.git
             commit: ${COMMIT}
             keepGitDir: true
-    kubernetes-release:
-        git:
-            url: https://github.com/kubernetes/release.git
-            commit: ${RELEASE_COMMIT}
+    kube-proxy-iptables-setup:
+        path: specs/kubernetes-fixed/kube-proxy-iptables-setup
+        includes:
+            - "kube-proxy-iptables-setup.sh"
+        context: {}
 conflicts:
-    kubernetes-client:
-    kubernetes:
+    kubernetes-kube-proxy:
 x-windows-artifacts: &windows-artifacts
     binaries:
-        kubernetes/_output/bin/kubectl.exe: {}
-        kubernetes/_output/bin/kubectl-convert.exe: {}
+        kubernetes/_output/bin/kube-proxy.exe: {}
     licenses:
-        kubernetes-release/cmd/krel/templates/latest/kubectl/LICENSE: {}
+        kubernetes/LICENSE: {}
 x-linux-artifacts: &linux-artifacts
     binaries:
-        kubernetes/_output/bin/kubectl: {}
-        kubernetes/_output/bin/kubectl-convert: {}
+        kubernetes/_output/bin/kube-proxy: {}
+        kube-proxy-iptables-setup/kube-proxy-iptables-setup.sh:
+            subpath: kube-proxy-iptables-setup
     licenses:
-        kubernetes-release/cmd/krel/templates/latest/kubectl/LICENSE: {}
-    docs:
-        kubernetes-release/cmd/krel/templates/latest/kubectl/README.md: {}
-x-azl-dependencies:
-    build: &kubectl-azl-build-deps
-        msft-golang:
-        git:
-        make:
-        gcc:
-        rsync:
-        sed:
-    runtime: &kubectl-azl-runtime-deps
-        openssl-libs:
-        bash:
-x-ubuntu-dependencies:
-    build: &kubectl-ubuntu-build-deps
-        bash: {}
-        gcc: {}
-        git: {}
-        msft-golang:
-            version:
-                - ">= 1.23.3"
-        make: {}
-        rsync: {}
-        sed: {}
-    runtime: &kubectl-ubuntu-runtime-deps
-        libssl3:
-x-ubuntu-focal-dependencies:
-    runtime: &kubectl-ubuntu-focal-runtime-deps
-        libssl1.1:
+        kubernetes/LICENSE: {}
 x-vars:
     msft-key: &msft-key
         msft.asc:
@@ -80,14 +53,6 @@ x-vars:
                 permissions: 0o644
     msft-repo-envs: &msft-repo-envs
         - build
-    focal-repo: &focal-repo
-        - keys: *msft-key
-          config:
-            microsoft-prod.list:
-                inline:
-                    file:
-                        contents: deb [arch=amd64,arm64,armhf signed-by=/usr/share/keyrings/msft.asc] https://packages.microsoft.com/ubuntu/20.04/prod focal main
-          envs: *msft-repo-envs
     jammy-repo: &jammy-repo
         - keys: *msft-key
           config:
@@ -96,20 +61,24 @@ x-vars:
                     file:
                         contents: deb [arch=amd64,arm64,armhf signed-by=/usr/share/keyrings/msft.asc] https://packages.microsoft.com/ubuntu/22.04/prod jammy main
           envs: *msft-repo-envs
-    noble-repo: &noble-repo
-        - keys: *msft-key
-          config:
-            microsoft-prod.list:
-                inline:
-                    file:
-                        contents: deb [arch=amd64,arm64,armhf signed-by=/usr/share/keyrings/msft.asc] https://packages.microsoft.com/ubuntu/24.04/prod noble main
-          envs: *msft-repo-envs
 targets:
     azlinux3:
         artifacts: *linux-artifacts
         dependencies:
-            build: *kubectl-azl-build-deps
-            runtime: *kubectl-azl-runtime-deps
+            build:
+                msft-golang:
+                git:
+                make:
+                gcc:
+                rsync:
+                sed:
+            runtime:
+                openssl-libs:
+                iptables:
+                ipset:
+                nftables:
+                conntrack:
+                kmod:
             extra_repos:
                 - config:
                     azl-cloud-native.repo:
@@ -128,27 +97,15 @@ targets:
                   envs:
                     # The repository will only be available when installing into the final container
                     - install
-    focal:
-        artifacts: *linux-artifacts
-        dependencies:
-            build: *kubectl-ubuntu-build-deps
-            runtime: *kubectl-ubuntu-focal-runtime-deps
-            extra_repos: *focal-repo
-    jammy:
-        artifacts: *linux-artifacts
-        dependencies:
-            build: *kubectl-ubuntu-build-deps
-            runtime: *kubectl-ubuntu-runtime-deps
-            extra_repos: *jammy-repo
-    noble:
-        artifacts: *linux-artifacts
-        dependencies:
-            build: *kubectl-ubuntu-build-deps
-            runtime: *kubectl-ubuntu-runtime-deps
-            extra_repos: *noble-repo
     windowscross:
         dependencies:
-            build: *kubectl-ubuntu-build-deps
+            build:
+                msft-golang:
+                git:
+                make:
+                gcc:
+                rsync:
+                sed:
             extra_repos: *jammy-repo
         artifacts: *windows-artifacts
 build:
@@ -165,6 +122,7 @@ build:
     steps:
         - command: |
             cd kubernetes
+            go work vendor
             major="$(echo ${VERSION} | grep -Po "(?<=v)[0-9]+")"
             minor="$(echo ${VERSION} | grep -Po "(?<=v${major}.)[0-9]+")"
             SANITIZED_VERSION=$(printf '%s' "$VERSION" | sed 's/~/-/g')
@@ -175,27 +133,43 @@ build:
             KUBE_GIT_MAJOR='${major}'
             KUBE_GIT_MINOR='${minor}'
             EOF
-            KUBE_BUILD_PLATFORMS=${TARGET_OS}/${TARGET_ARCH} KUBE_VERBOSE=3 KUBE_GIT_VERSION_FILE=version-file WHAT="cmd/kubectl cmd/kubectl-convert" KUBE_CGO_OVERRIDES="kubectl kubectl-convert" DBG=1 make
+            KUBE_BUILD_PLATFORMS=${TARGET_OS}/${TARGET_ARCH} KUBE_VERBOSE=3 KUBE_GIT_VERSION_FILE=version-file  WHAT=cmd/kube-proxy KUBE_CGO_OVERRIDES=kube-proxy DBG=1 make
             if [ "$TARGET_OS" = "windows" ]; then
               mkdir -p _output/bin/
-              cp -f _output/local/bin/${TARGET_OS}/${TARGET_ARCH}/kubectl* _output/bin/
+              cp -f _output/local/bin/${TARGET_OS}/${TARGET_ARCH}/kube-proxy* _output/bin/
             fi
+artifacts: *linux-artifacts
 tests:
     - name: Check files
       files:
-        /usr/bin/kubectl:
+        /usr/bin/kube-proxy:
             permissions: 0755
-        /usr/bin/kubectl-convert:
+        /usr/bin/kube-proxy-iptables-setup/kube-proxy-iptables-setup.sh:
             permissions: 0755
 image:
-    entrypoint: /usr/bin/kubectl
+    entrypoint: /usr/local/bin/kube-proxy
+    post:
+        symlinks:
+            /usr/bin/kube-proxy-iptables-setup/kube-proxy-iptables-setup.sh:
+                path: /usr/local/bin/kube-proxy
 
 changelog:
   - date: "2025-10-23"
     author: azcu-bot
     changes:
       - "Rebuild to address OpenSSL CVE fixes"
-  - date: "2025-07-21"
+  - date: "2025-08-27"
+    author: azcu-bot
+    changes:
+    - "[CRITICAL] CVE-2025-49794 in libxml2 (2.11.5-5.azl3) - libxml: Heap use after free (UAF) leads to Denial of service (DoS)"
+    - "[CRITICAL] CVE-2025-49796 in libxml2 (2.11.5-5.azl3) - libxml: Type confusion leads to Denial of service (DoS)"
+    - "[MEDIUM] CVE-2025-6021 in libxml2 (2.11.5-5.azl3) - libxml2: Integer Overflow in xmlBuildQName() Leads to Stack Buffer Overflow i..."
+    - "[LOW] CVE-2025-6170 in libxml2 (2.11.5-5.azl3) - libxml2: Stack Buffer Overflow in xmllint Interactive Shell Command Handling"
+  - date: "2025-07-25"
     author: "Jeremy Rickard <jrickard@microsoft.com>"
     changes:
-      - added deb and windows
+      - Introduce Windows Build
+  - date: "2025-06-10"
+    author: "Jeremy Rickard <jrickard@microsoft.com>"
+    changes:
+      - Update entrypoint

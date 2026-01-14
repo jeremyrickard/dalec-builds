@@ -1,4 +1,4 @@
-# syntax=ghcr.io/azure/dalec/frontend:0.20
+# syntax=ghcr.io/project-dalec/dalec/frontend:0.20
 
 args:
     VERSION: 1.32.0
