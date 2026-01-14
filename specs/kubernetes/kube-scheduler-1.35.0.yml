@@ -1,0 +1,93 @@
+# syntax=ghcr.io/project-dalec/dalec/frontend:0.20
+
+args:
+    VERSION: 1.35.0
+    COMMIT: 66452049f3d692768c39c797b21b793dce80314e
+    REVISION: 1
+name: kube-scheduler
+packager: Jeremy Rickard
+vendor: Mcguffin Corp
+license: Apache-2.0
+website: https://github.com/kubernetes/kubernetes
+description: Kubernetes Scheduler Component
+version: ${VERSION}
+revision: ${REVISION}
+sources:
+    kubernetes:
+        generate:
+            - gomod: {}
+        git:
+            url: https://github.com/kubernetes/kubernetes.git
+            commit: ${COMMIT}
+            keepGitDir: true
+conflicts:
+    kubernetes-kube-scheduler:
+targets:
+    azlinux3:
+        dependencies:
+            build:
+                msft-golang:
+                git:
+                make:
+                gcc:
+                rsync:
+                sed:
+            runtime:
+                openssl-libs:
+                kubernetes-gorunner:
+                    version:
+                        - "== 0.17.8"
+            extra_repos:
+                - config:
+                    azl-cloud-native.repo:
+                        inline:
+                            file:
+                                contents: |
+                                    [azlinux-cloud-native]
+                                    name=Azure Linux Cloud Native $releasever $basearch
+                                    baseurl=https://packages.microsoft.com/azurelinux/$releasever/prod/cloud-native/$basearch
+                                    gpgkey=file:///etc/pki/rpm-gpg/MICROSOFT-RPM-GPG-KEY
+                                    gpgcheck=1
+                                    repo_gpgcheck=1
+                                    enabled=1
+                                    skip_if_unavailable=True
+                                    sslverify=1
+                  envs:
+                    # The repository will only be available when installing into the final container
+                    - install
+build:
+    env:
+        VERSION: "v${VERSION}"
+        COMMIT: "${COMMIT}"
+        GOPROXY: direct
+        GOEXPERIMENT: systemcrypto
+        CGO_ENABLED: "1"
+        FORCE_HOST_GO: true
+        KUBE_GIT_TREE_STATE: clean
+    steps:
+        - command: |
+            cd kubernetes
+            major="$(echo ${VERSION} | grep -Po "(?<=v)[0-9]+")"
+            minor="$(echo ${VERSION} | grep -Po "(?<=v${major}.)[0-9]+")"
+            SANITIZED_VERSION=$(printf '%s' "$VERSION" | sed 's/~/-/g')
+            cat <<EOF >version-file
+            KUBE_GIT_COMMIT='${COMMIT}'
+            KUBE_GIT_TREE_STATE='clean'
+            KUBE_GIT_VERSION='${SANITIZED_VERSION}'
+            KUBE_GIT_MAJOR='${major}'
+            KUBE_GIT_MINOR='${minor}'
+            EOF
+            KUBE_VERBOSE=3 KUBE_GIT_VERSION_FILE=version-file  WHAT=cmd/kube-scheduler KUBE_CGO_OVERRIDES=kube-scheduler DBG=1 make
+artifacts:
+    binaries:
+        kubernetes/_output/bin/kube-scheduler: {}
+    licenses:
+        kubernetes/LICENSE: {}
+tests:
+    - name: Check files
+      files:
+        /usr/bin/kube-scheduler:
+            permissions: 0755
+image:
+    entrypoint: /usr/bin/go-runner
+

@@ -1,0 +1,152 @@
+# syntax=ghcr.io/project-dalec/dalec/frontend:0.20
+
+args:
+    VERSION: 1.35.0
+    COMMIT: 66452049f3d692768c39c797b21b793dce80314e
+    REVISION: 1
+    TARGETOS:
+    TARGETARCH:
+name: kube-proxy
+packager: Jeremy Rickard
+vendor: Mcguffin Corp
+license: Apache-2.0
+website: https://github.com/kubernetes/kubernetes
+description: Kubernetes Kube Proxy
+version: ${VERSION}
+revision: ${REVISION}
+sources:
+    kubernetes:
+        generate:
+            - gomod: {}
+        git:
+            url: https://github.com/kubernetes/kubernetes.git
+            commit: ${COMMIT}
+            keepGitDir: true
+    kube-proxy-iptables-setup:
+        path: specs/kubernetes/kube-proxy-iptables-setup
+        includes:
+            - "kube-proxy-iptables-setup.sh"
+        context: {}
+conflicts:
+    kubernetes-kube-proxy:
+x-windows-artifacts: &windows-artifacts
+    binaries:
+        kubernetes/_output/bin/kube-proxy.exe: {}
+    licenses:
+        kubernetes/LICENSE: {}
+x-linux-artifacts: &linux-artifacts
+    binaries:
+        kubernetes/_output/bin/kube-proxy: {}
+        kube-proxy-iptables-setup/kube-proxy-iptables-setup.sh:
+            subpath: kube-proxy-iptables-setup
+    licenses:
+        kubernetes/LICENSE: {}
+x-vars:
+    msft-key: &msft-key
+        msft.asc:
+            http:
+                url: https://packages.microsoft.com/keys/microsoft.asc
+                digest: sha256:2fa9c05d591a1582a9aba276272478c262e95ad00acf60eaee1644d93941e3c6
+                permissions: 0o644
+    msft-repo-envs: &msft-repo-envs
+        - build
+    jammy-repo: &jammy-repo
+        - keys: *msft-key
+          config:
+            microsoft-prod.list:
+                inline:
+                    file:
+                        contents: deb [arch=amd64,arm64,armhf signed-by=/usr/share/keyrings/msft.asc] https://packages.microsoft.com/ubuntu/22.04/prod jammy main
+          envs: *msft-repo-envs
+targets:
+    azlinux3:
+        artifacts: *linux-artifacts
+        dependencies:
+            build:
+                msft-golang:
+                git:
+                make:
+                gcc:
+                rsync:
+                sed:
+            runtime:
+                openssl-libs:
+                iptables:
+                ipset:
+                nftables:
+                conntrack:
+                kmod:
+            extra_repos:
+                - config:
+                    azl-cloud-native.repo:
+                        inline:
+                            file:
+                                contents: |
+                                    [azlinux-cloud-native]
+                                    name=Azure Linux Cloud Native $releasever $basearch
+                                    baseurl=https://packages.microsoft.com/azurelinux/$releasever/prod/cloud-native/$basearch
+                                    gpgkey=file:///etc/pki/rpm-gpg/MICROSOFT-RPM-GPG-KEY
+                                    gpgcheck=1
+                                    repo_gpgcheck=1
+                                    enabled=1
+                                    skip_if_unavailable=True
+                                    sslverify=1
+                  envs:
+                    # The repository will only be available when installing into the final container
+                    - install
+    windowscross:
+        dependencies:
+            build:
+                msft-golang:
+                git:
+                make:
+                gcc:
+                rsync:
+                sed:
+            extra_repos: *jammy-repo
+        artifacts: *windows-artifacts
+build:
+    env:
+        VERSION: "v${VERSION}"
+        COMMIT: "${COMMIT}"
+        GOPROXY: direct
+        GOEXPERIMENT: systemcrypto
+        CGO_ENABLED: "1"
+        FORCE_HOST_GO: true
+        KUBE_GIT_TREE_STATE: clean
+        TARGET_OS: ${TARGETOS}
+        TARGET_ARCH: ${TARGETARCH}
+    steps:
+        - command: |
+            cd kubernetes
+
+            major="$(echo ${VERSION} | grep -Po "(?<=v)[0-9]+")"
+            minor="$(echo ${VERSION} | grep -Po "(?<=v${major}.)[0-9]+")"
+            SANITIZED_VERSION=$(printf '%s' "$VERSION" | sed 's/~/-/g')
+            cat <<EOF >version-file
+            KUBE_GIT_COMMIT='${COMMIT}'
+            KUBE_GIT_TREE_STATE='clean'
+            KUBE_GIT_VERSION='${SANITIZED_VERSION}'
+            KUBE_GIT_MAJOR='${major}'
+            KUBE_GIT_MINOR='${minor}'
+            EOF
+            KUBE_BUILD_PLATFORMS=${TARGET_OS}/${TARGET_ARCH} KUBE_VERBOSE=3 KUBE_GIT_VERSION_FILE=version-file  WHAT=cmd/kube-proxy KUBE_CGO_OVERRIDES=kube-proxy DBG=1 make
+            if [ "$TARGET_OS" = "windows" ]; then
+              mkdir -p _output/bin/
+              cp -f _output/local/bin/${TARGET_OS}/${TARGET_ARCH}/kube-proxy* _output/bin/
+            fi
+artifacts: *linux-artifacts
+tests:
+    - name: Check files
+      files:
+        /usr/bin/kube-proxy:
+            permissions: 0755
+        /usr/bin/kube-proxy-iptables-setup/kube-proxy-iptables-setup.sh:
+            permissions: 0755
+image:
+    entrypoint: /usr/local/bin/kube-proxy
+    post:
+        symlinks:
+            /usr/bin/kube-proxy-iptables-setup/kube-proxy-iptables-setup.sh:
+                path: /usr/local/bin/kube-proxy
+

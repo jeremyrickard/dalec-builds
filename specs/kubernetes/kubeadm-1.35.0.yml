@@ -1,0 +1,210 @@
+# syntax=ghcr.io/project-dalec/dalec/frontend:0.20
+
+args:
+    VERSION: 1.35.0
+    COMMIT: 66452049f3d692768c39c797b21b793dce80314e
+    REVISION: 1
+    RELEASE_COMMIT: 3f5200e5d2f186e5604f50cebb0b1c34cb260e66
+    TARGETOS:
+    TARGETARCH:
+name: kubeadm
+packager: Jeremy Rickard
+vendor: Mcguffin Corp
+license: Apache-2.0
+website: https://github.com/kubernetes/kubernetes
+description: Command-line utility for administering a Kubernetes cluster
+version: ${VERSION}
+revision: ${REVISION}
+sources:
+    kubernetes:
+        generate:
+            - gomod: {}
+        git:
+            url: https://github.com/kubernetes/kubernetes.git
+            commit: ${COMMIT}
+            keepGitDir: true
+    kubernetes-release:
+        git:
+            url: https://github.com/kubernetes/release.git
+            commit: ${RELEASE_COMMIT}
+provides:
+    kubernetes-kubeadm:
+        version:
+            - = ${VERSION}
+replaces:
+    kubernetes-kubeadm:
+        version:
+            - < ${VERSION}
+x-windows-artifacts: &windows-artifacts
+    binaries:
+        kubernetes/_output/bin/kubeadm.exe: {}
+    licenses:
+        kubernetes-release/cmd/krel/templates/latest/kubeadm/LICENSE: {}
+x-linux-artifacts: &linux-artifacts
+    binaries:
+        kubernetes/_output/bin/kubeadm: {}
+    createDirectories:
+        config:
+            kubernetes:
+                mode: 493
+            kubernetes/manifests: {}
+        state:
+            kubeadm: {}
+    docs:
+        kubernetes-release/cmd/krel/templates/latest/kubeadm/README.md: {}
+    licenses:
+        kubernetes-release/cmd/krel/templates/latest/kubeadm/LICENSE: {}
+    systemd:
+        dropins:
+            kubernetes-release/cmd/krel/templates/latest/kubeadm/10-kubeadm.conf:
+                unit: kubelet.service
+x-azl-dependencies:
+    build: &kubeadm-azl-build-deps
+        gcc: {}
+        git: {}
+        msft-golang:
+        make: {}
+        rsync: {}
+    runtime: &kubeadm-azl-runtime-deps
+        openssl-libs: {}
+        cni-plugins:
+            version:
+                - ">= 1.2.0"
+x-ubuntu-dependencies:
+    build: &kubeadm-ubuntu-build-deps
+        bash: {}
+        gcc: {}
+        git: {}
+        msft-golang:
+            version:
+                - ">= 1.23.3"
+        make: {}
+        rsync: {}
+    runtime: &kubeadm-ubuntu-runtime-deps
+        libssl3:
+x-ubuntu-focal-dependencies:
+    runtime: &kubeadm-ubuntu-focal-runtime-deps
+        libssl1.1:
+x-vars:
+    msft-key: &msft-key
+        msft.asc:
+            http:
+                url: https://packages.microsoft.com/keys/microsoft.asc
+                digest: sha256:2fa9c05d591a1582a9aba276272478c262e95ad00acf60eaee1644d93941e3c6
+                permissions: 0o644
+    msft-repo-envs: &msft-repo-envs
+        - build
+    focal-repo: &focal-repo
+        - keys: *msft-key
+          config:
+            microsoft-prod.list:
+                inline:
+                    file:
+                        contents: deb [arch=amd64,arm64,armhf signed-by=/usr/share/keyrings/msft.asc] https://packages.microsoft.com/ubuntu/20.04/prod focal main
+          envs: *msft-repo-envs
+    jammy-repo: &jammy-repo
+        - keys: *msft-key
+          config:
+            microsoft-prod.list:
+                inline:
+                    file:
+                        contents: deb [arch=amd64,arm64,armhf signed-by=/usr/share/keyrings/msft.asc] https://packages.microsoft.com/ubuntu/22.04/prod jammy main
+          envs: *msft-repo-envs
+    noble-repo: &noble-repo
+        - keys: *msft-key
+          config:
+            microsoft-prod.list:
+                inline:
+                    file:
+                        contents: deb [arch=amd64,arm64,armhf signed-by=/usr/share/keyrings/msft.asc] https://packages.microsoft.com/ubuntu/24.04/prod noble main
+          envs: *msft-repo-envs
+targets:
+    azlinux3:
+        artifacts: *linux-artifacts
+        dependencies:
+            build: *kubeadm-azl-build-deps
+            runtime: *kubeadm-azl-runtime-deps
+            extra_repos:
+                - config:
+                    azl-cloud-native.repo:
+                        inline:
+                            file:
+                                contents: |
+                                    [azlinux-cloud-native]
+                                    name=Azure Linux Cloud Native $releasever $basearch
+                                    baseurl=https://packages.microsoft.com/azurelinux/$releasever/prod/cloud-native/$basearch
+                                    gpgkey=file:///etc/pki/rpm-gpg/MICROSOFT-RPM-GPG-KEY
+                                    gpgcheck=1
+                                    repo_gpgcheck=1
+                                    enabled=1
+                                    skip_if_unavailable=True
+                                    sslverify=1
+                  envs:
+                    # The repository will only be available when installing into the final container
+                    - install
+    focal:
+        artifacts: *linux-artifacts
+        dependencies:
+            build: *kubeadm-ubuntu-build-deps
+            runtime: *kubeadm-ubuntu-focal-runtime-deps
+            extra_repos: *focal-repo
+    jammy:
+        artifacts: *linux-artifacts
+        dependencies:
+            build: *kubeadm-ubuntu-build-deps
+            runtime: *kubeadm-ubuntu-runtime-deps
+            extra_repos: *jammy-repo
+    noble:
+        artifacts: *linux-artifacts
+        dependencies:
+            build: *kubeadm-ubuntu-build-deps
+            runtime: *kubeadm-ubuntu-runtime-deps
+            extra_repos: *noble-repo
+    windowscross:
+        dependencies:
+            build: *kubeadm-ubuntu-build-deps
+            extra_repos: *jammy-repo
+        artifacts: *windows-artifacts
+build:
+    env:
+        VERSION: "v${VERSION}"
+        COMMIT: "${COMMIT}"
+        GOPROXY: direct
+        GOEXPERIMENT: systemcrypto
+        CGO_ENABLED: "1"
+        FORCE_HOST_GO: true
+        KUBE_GIT_TREE_STATE: clean
+        TARGET_OS: ${TARGETOS}
+        TARGET_ARCH: ${TARGETARCH}
+    steps:
+        - command: |
+            export GOMODCACHE="$(pwd)/gomods"
+            cd kubernetes
+            major="$(echo ${VERSION} | grep -Po "(?<=v)[0-9]+")"
+            minor="$(echo ${VERSION} | grep -Po "(?<=v${major}.)[0-9]+")"
+            SANITIZED_VERSION=$(printf '%s' "$VERSION" | sed 's/~/-/g')
+            cat <<EOF >version-file
+            KUBE_GIT_COMMIT='${COMMIT}'
+            KUBE_GIT_TREE_STATE='clean'
+            KUBE_GIT_VERSION='${SANITIZED_VERSION}'
+            KUBE_GIT_MAJOR='${major}'
+            KUBE_GIT_MINOR='${minor}'
+            EOF
+            KUBE_BUILD_PLATFORMS=${TARGET_OS}/${TARGET_ARCH} KUBE_VERBOSE=3 KUBE_GIT_VERSION_FILE=version-file  WHAT=cmd/kubeadm KUBE_CGO_OVERRIDES=kubeadm DBG=1 make
+            if [ "$TARGET_OS" = "windows" ]; then
+              mkdir -p _output/bin/
+              cp -f _output/local/bin/${TARGET_OS}/${TARGET_ARCH}/kubeadm* _output/bin/
+            fi
+artifacts:
+    binaries:
+        kubernetes/_output/bin/kubeadm: {}
+    licenses:
+        kubernetes-release/cmd/krel/templates/latest/kubeadm/LICENSE: {}
+    docs:
+        kubernetes-release/cmd/krel/templates/latest/kubeadm/README.md: {}
+tests:
+    - name: Check files
+      files:
+        /usr/bin/kubeadm:
+            permissions: 0755
+

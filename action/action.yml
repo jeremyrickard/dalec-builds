@@ -1,0 +1,29 @@
+name: dalec-build
+description: Build DALEC spec with BuildKit and optionally push to GHCR
+inputs:
+  spec:
+    required: true
+  target:
+    required: true
+  image:
+    required: false
+  platforms:
+    required: false
+    default: linux/amd64,linux/arm64
+  push:
+    required: false
+    default: 'true'
+runs:
+  using: composite
+  steps:
+    - uses: docker/setup-buildx-action@v3
+    - uses: docker/build-push-action@v6
+      with:
+        context: .
+        file: ${{ inputs.spec }}
+        target: ${{ inputs.target }}
+        platforms: ${{ inputs.platforms }}
+        push: ${{ inputs.push }}
+        tags: ${{ inputs.image }}
+        build-args: |
+          BUILDKIT_SYNTAX=ghcr.io/project-dalec/dalec:latest
