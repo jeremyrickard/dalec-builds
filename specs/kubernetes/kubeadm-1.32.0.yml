@@ -1,0 +1,143 @@
+# syntax=ghcr.io/azure/dalec/frontend:0.20
+
+args:
+    VERSION: 1.32.0
+    COMMIT: 70d3cc986aa8221cd1dfb1121852688902d3bf53
+    REVISION: 2
+    RELEASE_COMMIT: 3f5200e5d2f186e5604f50cebb0b1c34cb260e66
+name: kubeadm
+packager: Jeremy Rickard
+vendor: Mcguffin Corp
+license: Apache-2.0
+website: https://github.com/kubernetes/kubernetes
+description: Command-line utility for administering a Kubernetes cluster
+version: ${VERSION}
+revision: ${REVISION}
+sources:
+    kubernetes:
+        generate:
+            - gomod: {}
+        git:
+            url: https://github.com/kubernetes/kubernetes.git
+            commit: ${COMMIT}
+            keepGitDir: true
+    kubernetes-release:
+        git:
+            url: https://github.com/kubernetes/release.git
+            commit: ${RELEASE_COMMIT}
+provides:
+    kubernetes-kubeadm:
+        version:
+            - = ${VERSION}
+replaces:
+    kubernetes-kubeadm:
+        version:
+            - < ${VERSION}
+targets:
+    mariner2:
+        dependencies:
+            build:
+                msft-golang:
+                    version:
+                        - ">= 1.22.10"
+                git:
+                make:
+                gcc:
+                rsync:
+            runtime:
+                openssl-libs:
+            extra_repos:
+                - config:
+                    azl-cloud-native.repo:
+                        inline:
+                            file:
+                                contents: |
+                                    [mariner2-cloud-native]
+                                    name=Mariner Cloud Native $releasever $basearch
+                                    baseurl=https://packages.microsoft.com/cbl-mariner/$releasever/prod/cloud-native/$basearch
+                                    gpgkey=file:///etc/pki/rpm-gpg/MICROSOFT-RPM-GPG-KEY
+                                    gpgcheck=1
+                                    repo_gpgcheck=1
+                                    enabled=1
+                                    skip_if_unavailable=True
+                                    sslverify=1
+                  envs:
+                    # The repository will only be available when installing into the final container
+                    - install
+    azlinux3:
+        dependencies:
+            build:
+                golang:
+                    version:
+                        - ">= 1.23.3"
+                git:
+                make:
+                gcc:
+                rsync:
+            runtime:
+                openssl-libs:
+                SymCrypt:
+                SymCrypt-OpenSSL:
+            extra_repos:
+                - config:
+                    azl-cloud-native.repo:
+                        inline:
+                            file:
+                                contents: |
+                                    [azlinux-cloud-native]
+                                    name=Azure Linux Cloud Native $releasever $basearch
+                                    baseurl=https://packages.microsoft.com/azurelinux/$releasever/prod/cloud-native/$basearch
+                                    gpgkey=file:///etc/pki/rpm-gpg/MICROSOFT-RPM-GPG-KEY
+                                    gpgcheck=1
+                                    repo_gpgcheck=1
+                                    enabled=1
+                                    skip_if_unavailable=True
+                                    sslverify=1
+                  envs:
+                    # The repository will only be available when installing into the final container
+                    - install
+build:
+    env:
+        VERSION: "v${VERSION}"
+        COMMIT: "${COMMIT}"
+        GOPROXY: direct
+        GOEXPERIMENT: systemcrypto
+        CGO_ENABLED: "1"
+        FORCE_HOST_GO: true
+        KUBE_GIT_TREE_STATE: clean
+    steps:
+        - command: |
+            export GOMODCACHE="$(pwd)/gomods"
+            cd kubernetes
+            major="$(echo ${VERSION} | grep -Po "(?<=v)[0-9]+")"
+            minor="$(echo ${VERSION} | grep -Po "(?<=v${major}.)[0-9]+")"
+            cat <<EOF >version-file
+            KUBE_GIT_COMMIT='${COMMIT}'
+            KUBE_GIT_TREE_STATE='clean'
+            KUBE_GIT_VERSION='${VERSION}'
+            KUBE_GIT_MAJOR='${major}'
+            KUBE_GIT_MINOR='${minor}'
+            EOF
+            KUBE_VERBOSE=3 KUBE_GIT_VERSION_FILE=version-file  WHAT=cmd/kubeadm KUBE_CGO_OVERRIDES=kubeadm DBG=1 make
+artifacts:
+    binaries:
+        kubernetes/_output/bin/kubeadm: {}
+    licenses:
+        kubernetes-release/cmd/krel/templates/latest/kubeadm/LICENSE: {}
+    docs:
+        kubernetes-release/cmd/krel/templates/latest/kubeadm/README.md: {}
+    systemd:
+        dropins:
+            kubernetes-release/cmd/krel/templates/latest/kubeadm/10-kubeadm.conf:
+                unit: kubelet.service
+tests:
+    - name: Check files
+      files:
+        /usr/bin/kubeadm:
+            permissions: 0755
+
+changelog:
+  - date: "2025-10-23"
+    author: azcu-bot
+    changes:
+      - "Rebuild to address OpenSSL CVE fixes"

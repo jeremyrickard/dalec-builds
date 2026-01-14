@@ -1,0 +1,201 @@
+# syntax=ghcr.io/azure/dalec/frontend:0.20
+
+args:
+    VERSION: 1.32.0
+    COMMIT: 70d3cc986aa8221cd1dfb1121852688902d3bf53
+    REVISION: 3
+    RELEASE_COMMIT: 3f5200e5d2f186e5604f50cebb0b1c34cb260e66
+    TARGETOS:
+    TARGETARCH:
+name: kubectl
+packager: Jeremy Rickard
+vendor: Mcguffin Corp
+license: Apache-2.0
+website: https://github.com/kubernetes/kubernetes
+description: Command-line utility for interacting with a Kubernetes cluster
+version: ${VERSION}
+revision: ${REVISION}
+sources:
+    kubernetes:
+        generate:
+            - gomod: {}
+        git:
+            url: https://github.com/kubernetes/kubernetes.git
+            commit: ${COMMIT}
+            keepGitDir: true
+    kubernetes-release:
+        git:
+            url: https://github.com/kubernetes/release.git
+            commit: ${RELEASE_COMMIT}
+conflicts:
+    kubernetes-client:
+    kubernetes:
+x-windows-artifacts: &windows-artifacts
+    binaries:
+        kubernetes/_output/bin/kubectl.exe: {}
+        kubernetes/_output/bin/kubectl-convert.exe: {}
+    licenses:
+        kubernetes-release/cmd/krel/templates/latest/kubectl/LICENSE: {}
+x-linux-artifacts: &linux-artifacts
+    binaries:
+        kubernetes/_output/bin/kubectl: {}
+        kubernetes/_output/bin/kubectl-convert: {}
+    licenses:
+        kubernetes-release/cmd/krel/templates/latest/kubectl/LICENSE: {}
+    docs:
+        kubernetes-release/cmd/krel/templates/latest/kubectl/README.md: {}
+x-azl-dependencies:
+    build: &kubectl-azl-build-deps
+        msft-golang:
+        git:
+        make:
+        gcc:
+        rsync:
+        sed:
+    runtime: &kubectl-azl-runtime-deps
+        openssl-libs:
+        bash:
+x-ubuntu-dependencies:
+    build: &kubectl-ubuntu-build-deps
+        bash: {}
+        gcc: {}
+        git: {}
+        msft-golang:
+            version:
+                - ">= 1.23.3"
+        make: {}
+        rsync: {}
+        sed: {}
+    runtime: &kubectl-ubuntu-runtime-deps
+        libssl3:
+x-ubuntu-focal-dependencies:
+    runtime: &kubectl-ubuntu-focal-runtime-deps
+        libssl1.1:
+x-vars:
+    msft-key: &msft-key
+        msft.asc:
+            http:
+                url: https://packages.microsoft.com/keys/microsoft.asc
+                digest: sha256:2fa9c05d591a1582a9aba276272478c262e95ad00acf60eaee1644d93941e3c6
+                permissions: 0o644
+    msft-repo-envs: &msft-repo-envs
+        - build
+    focal-repo: &focal-repo
+        - keys: *msft-key
+          config:
+            microsoft-prod.list:
+                inline:
+                    file:
+                        contents: deb [arch=amd64,arm64,armhf signed-by=/usr/share/keyrings/msft.asc] https://packages.microsoft.com/ubuntu/20.04/prod focal main
+          envs: *msft-repo-envs
+    jammy-repo: &jammy-repo
+        - keys: *msft-key
+          config:
+            microsoft-prod.list:
+                inline:
+                    file:
+                        contents: deb [arch=amd64,arm64,armhf signed-by=/usr/share/keyrings/msft.asc] https://packages.microsoft.com/ubuntu/22.04/prod jammy main
+          envs: *msft-repo-envs
+    noble-repo: &noble-repo
+        - keys: *msft-key
+          config:
+            microsoft-prod.list:
+                inline:
+                    file:
+                        contents: deb [arch=amd64,arm64,armhf signed-by=/usr/share/keyrings/msft.asc] https://packages.microsoft.com/ubuntu/24.04/prod noble main
+          envs: *msft-repo-envs
+targets:
+    azlinux3:
+        artifacts: *linux-artifacts
+        dependencies:
+            build: *kubectl-azl-build-deps
+            runtime: *kubectl-azl-runtime-deps
+            extra_repos:
+                - config:
+                    azl-cloud-native.repo:
+                        inline:
+                            file:
+                                contents: |
+                                    [azlinux-cloud-native]
+                                    name=Azure Linux Cloud Native $releasever $basearch
+                                    baseurl=https://packages.microsoft.com/azurelinux/$releasever/prod/cloud-native/$basearch
+                                    gpgkey=file:///etc/pki/rpm-gpg/MICROSOFT-RPM-GPG-KEY
+                                    gpgcheck=1
+                                    repo_gpgcheck=1
+                                    enabled=1
+                                    skip_if_unavailable=True
+                                    sslverify=1
+                  envs:
+                    # The repository will only be available when installing into the final container
+                    - install
+    focal:
+        artifacts: *linux-artifacts
+        dependencies:
+            build: *kubectl-ubuntu-build-deps
+            runtime: *kubectl-ubuntu-focal-runtime-deps
+            extra_repos: *focal-repo
+    jammy:
+        artifacts: *linux-artifacts
+        dependencies:
+            build: *kubectl-ubuntu-build-deps
+            runtime: *kubectl-ubuntu-runtime-deps
+            extra_repos: *jammy-repo
+    noble:
+        artifacts: *linux-artifacts
+        dependencies:
+            build: *kubectl-ubuntu-build-deps
+            runtime: *kubectl-ubuntu-runtime-deps
+            extra_repos: *noble-repo
+    windowscross:
+        dependencies:
+            build: *kubectl-ubuntu-build-deps
+            extra_repos: *jammy-repo
+        artifacts: *windows-artifacts
+build:
+    env:
+        VERSION: "v${VERSION}"
+        COMMIT: "${COMMIT}"
+        GOPROXY: direct
+        GOEXPERIMENT: systemcrypto
+        CGO_ENABLED: "1"
+        FORCE_HOST_GO: true
+        KUBE_GIT_TREE_STATE: clean
+        TARGET_OS: ${TARGETOS}
+        TARGET_ARCH: ${TARGETARCH}
+    steps:
+        - command: |
+            cd kubernetes
+            major="$(echo ${VERSION} | grep -Po "(?<=v)[0-9]+")"
+            minor="$(echo ${VERSION} | grep -Po "(?<=v${major}.)[0-9]+")"
+            SANITIZED_VERSION=$(printf '%s' "$VERSION" | sed 's/~/-/g')
+            cat <<EOF >version-file
+            KUBE_GIT_COMMIT='${COMMIT}'
+            KUBE_GIT_TREE_STATE='clean'
+            KUBE_GIT_VERSION='${SANITIZED_VERSION}'
+            KUBE_GIT_MAJOR='${major}'
+            KUBE_GIT_MINOR='${minor}'
+            EOF
+            KUBE_BUILD_PLATFORMS=${TARGET_OS}/${TARGET_ARCH} KUBE_VERBOSE=3 KUBE_GIT_VERSION_FILE=version-file WHAT="cmd/kubectl cmd/kubectl-convert" KUBE_CGO_OVERRIDES="kubectl kubectl-convert" DBG=1 make
+            if [ "$TARGET_OS" = "windows" ]; then
+              mkdir -p _output/bin/
+              cp -f _output/local/bin/${TARGET_OS}/${TARGET_ARCH}/kubectl* _output/bin/
+            fi
+tests:
+    - name: Check files
+      files:
+        /usr/bin/kubectl:
+            permissions: 0755
+        /usr/bin/kubectl-convert:
+            permissions: 0755
+image:
+    entrypoint: /usr/bin/kubectl
+
+changelog:
+  - date: "2025-10-23"
+    author: azcu-bot
+    changes:
+      - "Rebuild to address OpenSSL CVE fixes"
+  - date: "2025-07-21"
+    author: "Jeremy Rickard <jrickard@microsoft.com>"
+    changes:
+      - added deb and windows

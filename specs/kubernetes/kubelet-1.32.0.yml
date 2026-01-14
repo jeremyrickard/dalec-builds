@@ -1,0 +1,233 @@
+# syntax=ghcr.io/azure/dalec/frontend:0.20
+
+args:
+    VERSION: 1.32.0
+    COMMIT: 70d3cc986aa8221cd1dfb1121852688902d3bf53
+    REVISION: 2
+    RELEASE_COMMIT: 3f5200e5d2f186e5604f50cebb0b1c34cb260e66
+    TARGETOS:
+    TARGETARCH:
+name: kubelet
+packager: Jeremy Rickard
+vendor: Mcguffin Corp
+license: Apache-2.0
+website: https://github.com/kubernetes/kubernetes
+description: Node agent for Kubernetes clusters
+version: ${VERSION}
+revision: ${REVISION}
+sources:
+    kubernetes:
+        generate:
+            - gomod: {}
+        git:
+            url: https://github.com/kubernetes/kubernetes.git
+            commit: ${COMMIT}
+            keepGitDir: true
+    kubernetes-release:
+        git:
+            url: https://github.com/kubernetes/release.git
+            commit: ${RELEASE_COMMIT}
+conflicts:
+    kubernetes:
+x-windows-artifacts: &windows-artifacts
+    binaries:
+        kubernetes/_output/bin/kubelet.exe: {}
+    licenses:
+        kubernetes-release/cmd/krel/templates/latest/kubelet/LICENSE: {}
+x-linux-artifacts: &linux-artifacts
+    binaries:
+        kubernetes/_output/bin/kubelet: {}
+    createDirectories:
+        config:
+            kubernetes:
+                mode: 493
+            kubernetes/manifests: {}
+        state:
+            kubelet: {}
+    configFiles:
+        kubernetes-release/cmd/krel/templates/latest/kubelet/kubelet.env:
+            subpath: sysconfig
+            name: kubelet
+    docs:
+        kubernetes-release/cmd/krel/templates/latest/kubelet/README.md: {}
+    licenses:
+        kubernetes-release/cmd/krel/templates/latest/kubelet/LICENSE: {}
+    systemd:
+        units:
+            kubernetes-release/cmd/krel/templates/latest/kubelet/kubelet.service:
+                name: kubelet.service
+                enable: true
+x-azl-dependencies:
+    build: &kubelet-azl-build-deps
+        gcc: {}
+        git: {}
+        msft-golang:
+            version:
+                - ">= 1.23.3"
+        make: {}
+        rsync: {}
+    runtime: &kubelet-azl-runtime-deps
+        openssl-libs: {}
+        cni-plugins:
+            version:
+                - ">= 1.2.0"
+x-ubuntu-dependencies:
+    build: &kubelet-ubuntu-build-deps
+        gcc: {}
+        git: {}
+        msft-golang:
+            version:
+                - ">= 1.23.3"
+        make: {}
+        rsync: {}
+    runtime: &kubelet-ubuntu-runtime-deps
+        libssl3:
+x-ubuntu-focal-dependencies:
+    runtime: &kubelet-ubuntu-focal-runtime-deps
+        libssl1.1:
+x-vars:
+    msft-key: &msft-key
+        msft.asc:
+            http:
+                url: https://packages.microsoft.com/keys/microsoft.asc
+                digest: sha256:2fa9c05d591a1582a9aba276272478c262e95ad00acf60eaee1644d93941e3c6
+                permissions: 0o644
+    msft-repo-envs: &msft-repo-envs
+        - build
+    focal-repo: &focal-repo
+        - keys: *msft-key
+          config:
+            microsoft-prod.list:
+                inline:
+                    file:
+                        contents: deb [arch=amd64,arm64,armhf signed-by=/usr/share/keyrings/msft.asc] https://packages.microsoft.com/ubuntu/20.04/prod focal main
+          envs: *msft-repo-envs
+    jammy-repo: &jammy-repo
+        - keys: *msft-key
+          config:
+            microsoft-prod.list:
+                inline:
+                    file:
+                        contents: deb [arch=amd64,arm64,armhf signed-by=/usr/share/keyrings/msft.asc] https://packages.microsoft.com/ubuntu/22.04/prod jammy main
+          envs: *msft-repo-envs
+    noble-repo: &noble-repo
+        - keys: *msft-key
+          config:
+            microsoft-prod.list:
+                inline:
+                    file:
+                        contents: deb [arch=amd64,arm64,armhf signed-by=/usr/share/keyrings/msft.asc] https://packages.microsoft.com/ubuntu/24.04/prod noble main
+          envs: *msft-repo-envs
+targets:
+    azlinux3:
+        artifacts: *linux-artifacts
+        dependencies:
+            build: *kubelet-azl-build-deps
+            runtime: *kubelet-azl-runtime-deps
+            extra_repos:
+                - config:
+                    azl-cloud-native.repo:
+                        inline:
+                            file:
+                                contents: "[azlinux-cloud-native]\nname=Azure Linux Cloud Native $releasever $basearch\nbaseurl=https://packages.microsoft.com/azurelinux/$releasever/prod/cloud-native/$basearch\ngpgkey=file:///etc/pki/rpm-gpg/MICROSOFT-RPM-GPG-KEY\ngpgcheck=1\nrepo_gpgcheck=1\nenabled=1\nskip_if_unavailable=True\nsslverify=1\n"
+                  envs:
+                    - install
+    mariner2:
+        artifacts: *linux-artifacts
+        dependencies:
+            build: *kubelet-azl-build-deps
+            runtime: *kubelet-azl-runtime-deps
+            extra_repos:
+                - config:
+                    azl-cloud-native.repo:
+                        inline:
+                            file:
+                                contents: "[mariner2-cloud-native]\nname=Mariner Cloud Native $releasever $basearch\nbaseurl=https://packages.microsoft.com/cbl-mariner/$releasever/prod/cloud-native/$basearch\ngpgkey=file:///etc/pki/rpm-gpg/MICROSOFT-RPM-GPG-KEY\ngpgcheck=1\nrepo_gpgcheck=1\nenabled=1\nskip_if_unavailable=True\nsslverify=1\n"
+                  envs:
+                    - install
+    focal:
+        artifacts: *linux-artifacts
+        dependencies:
+            build: *kubelet-ubuntu-build-deps
+            runtime: *kubelet-ubuntu-focal-runtime-deps
+            extra_repos: *focal-repo
+    jammy:
+        artifacts: *linux-artifacts
+        dependencies:
+            build: *kubelet-ubuntu-build-deps
+            runtime: *kubelet-ubuntu-runtime-deps
+            extra_repos: *jammy-repo
+    noble:
+        artifacts: *linux-artifacts
+        dependencies:
+            build: *kubelet-ubuntu-build-deps
+            runtime: *kubelet-ubuntu-runtime-deps
+            extra_repos: *noble-repo
+    windowscross:
+        dependencies:
+            build: *kubelet-ubuntu-build-deps
+            extra_repos: *jammy-repo
+        artifacts: *windows-artifacts
+build:
+    env:
+        VERSION: "v${VERSION}"
+        COMMIT: "${COMMIT}"
+        GOPROXY: direct
+        GOEXPERIMENT: systemcrypto
+        CGO_ENABLED: "1"
+        FORCE_HOST_GO: true
+        KUBE_GIT_TREE_STATE: clean
+        TARGET_OS: ${TARGETOS}
+        TARGET_ARCH: ${TARGETARCH}
+    steps:
+        - command: |
+            cd kubernetes
+            major="$(echo ${VERSION} | grep -Po "(?<=v)[0-9]+")"
+            minor="$(echo ${VERSION} | grep -Po "(?<=v${major}.)[0-9]+")"
+            cat <<EOF >version-file
+            KUBE_GIT_COMMIT='${COMMIT}'
+            KUBE_GIT_TREE_STATE='clean'
+            KUBE_GIT_VERSION='${VERSION}'
+            KUBE_GIT_MAJOR='${major}'
+            KUBE_GIT_MINOR='${minor}'
+            EOF
+            KUBE_VERBOSE=3 KUBE_GIT_VERSION_FILE=version-file  WHAT=cmd/kubelet KUBE_CGO_OVERRIDES=kubelet DBG=1 make
+            KUBE_BUILD_PLATFORMS=${TARGET_OS}/${TARGET_ARCH} KUBE_VERBOSE=3 KUBE_GIT_VERSION_FILE=version-file  WHAT=cmd/kubelet KUBE_CGO_OVERRIDES=kubelet DBG=1 make
+            if [ "$TARGET_OS" = "windows" ]; then
+              mkdir -p _output/bin/
+              cp -f _output/local/bin/${TARGET_OS}/${TARGET_ARCH}/kubelet* _output/bin/
+            fi
+artifacts:
+    binaries:
+        kubernetes/_output/bin/kubelet: {}
+    createDirectories:
+        config:
+            kubernetes:
+                mode: 0755
+            kubernetes/manifests: {}
+        state:
+            kubelet: {}
+    systemd:
+        units:
+            kubernetes-release/cmd/krel/templates/latest/kubelet/kubelet.service:
+                name: kubelet.service
+                enable: true
+    licenses:
+        kubernetes-release/cmd/krel/templates/latest/kubelet/LICENSE: {}
+    docs:
+        kubernetes-release/cmd/krel/templates/latest/kubelet/README.md: {}
+    configFiles:
+        kubernetes-release/cmd/krel/templates/latest/kubelet/kubelet.env:
+            name: kubelet
+            subpath: sysconfig
+tests:
+    - name: Check files
+      files:
+        /usr/bin/kubelet:
+            permissions: 0755
+
+changelog:
+  - date: "2025-10-23"
+    author: azcu-bot
+    changes:
+      - "Rebuild to address OpenSSL CVE fixes"

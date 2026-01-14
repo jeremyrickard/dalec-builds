@@ -1,0 +1,141 @@
+# syntax=ghcr.io/azure/dalec/frontend:0.20
+
+args:
+    VERSION: 1.32.0
+    COMMIT: 70d3cc986aa8221cd1dfb1121852688902d3bf53
+    REVISION: 3
+name: kube-scheduler
+packager: Jeremy Rickard
+vendor: Mcguffin Corp
+license: Apache-2.0
+website: https://github.com/kubernetes/kubernetes
+description: Kubernetes Scheduler Component
+version: ${VERSION}
+revision: ${REVISION}
+sources:
+    kubernetes:
+        generate:
+            - gomod: {}
+        git:
+            url: https://github.com/kubernetes/kubernetes.git
+            commit: ${COMMIT}
+            keepGitDir: true
+conflicts:
+    kubernetes-kube-scheduler:
+targets:
+    mariner2:
+        dependencies:
+            build:
+                msft-golang:
+                    version:
+                        - ">= 1.22.10"
+                git:
+                make:
+                gcc:
+                rsync:
+            runtime:
+                openssl-libs:
+                kubernetes-gorunner:
+                    version:
+                        - "== 0.17.8"
+            extra_repos:
+                - config:
+                    azl-cloud-native.repo:
+                        inline:
+                            file:
+                                contents: |
+                                    [mariner2-cloud-native]
+                                    name=Mariner Cloud Native $releasever $basearch
+                                    baseurl=https://packages.microsoft.com/cbl-mariner/$releasever/prod/cloud-native/$basearch
+                                    gpgkey=file:///etc/pki/rpm-gpg/MICROSOFT-RPM-GPG-KEY
+                                    gpgcheck=1
+                                    repo_gpgcheck=1
+                                    enabled=1
+                                    skip_if_unavailable=True
+                                    sslverify=1
+                  envs:
+                    # The repository will only be available when installing into the final container
+                    - install
+    azlinux3:
+        dependencies:
+            build:
+                golang:
+                    version:
+                        - ">= 1.23.3"
+                git:
+                make:
+                gcc:
+                rsync:
+            runtime:
+                openssl-libs:
+                SymCrypt:
+                SymCrypt-OpenSSL:
+                kubernetes-gorunner:
+                    version:
+                        - "== 0.17.8"
+            extra_repos:
+                - config:
+                    azl-cloud-native.repo:
+                        inline:
+                            file:
+                                contents: |
+                                    [azlinux-cloud-native]
+                                    name=Azure Linux Cloud Native $releasever $basearch
+                                    baseurl=https://packages.microsoft.com/azurelinux/$releasever/prod/cloud-native/$basearch
+                                    gpgkey=file:///etc/pki/rpm-gpg/MICROSOFT-RPM-GPG-KEY
+                                    gpgcheck=1
+                                    repo_gpgcheck=1
+                                    enabled=1
+                                    skip_if_unavailable=True
+                                    sslverify=1
+                  envs:
+                    # The repository will only be available when installing into the final container
+                    - install
+build:
+    env:
+        VERSION: "v${VERSION}"
+        COMMIT: "${COMMIT}"
+        GOPROXY: direct
+        GOEXPERIMENT: systemcrypto
+        CGO_ENABLED: "1"
+        FORCE_HOST_GO: true
+        KUBE_GIT_TREE_STATE: clean
+    steps:
+        - command: |
+            cd kubernetes
+            major="$(echo ${VERSION} | grep -Po "(?<=v)[0-9]+")"
+            minor="$(echo ${VERSION} | grep -Po "(?<=v${major}.)[0-9]+")"
+            cat <<EOF >version-file
+            KUBE_GIT_COMMIT='${COMMIT}'
+            KUBE_GIT_TREE_STATE='clean'
+            KUBE_GIT_VERSION='${VERSION}'
+            KUBE_GIT_MAJOR='${major}'
+            KUBE_GIT_MINOR='${minor}'
+            EOF
+            KUBE_VERBOSE=3 KUBE_GIT_VERSION_FILE=version-file  WHAT=cmd/kube-scheduler KUBE_CGO_OVERRIDES=kube-scheduler DBG=1 make
+artifacts:
+    binaries:
+        kubernetes/_output/bin/kube-scheduler: {}
+    licenses:
+        kubernetes/LICENSE: {}
+tests:
+    - name: Check files
+      files:
+        /usr/bin/kube-scheduler:
+            permissions: 0755
+image:
+    entrypoint: /usr/bin/go-runner
+changelog:
+- date: "2025-10-23"
+  author: azcu-bot
+  changes:
+  - "Rebuild to address OpenSSL CVE fixes"
+- date: "2025-08-27"
+  author: azcu-bot
+  changes:
+  - "[HIGH] CVE-2024-33599 in glibc (2.38-10.azl3) - glibc: stack-based buffer overflow in netgroup cache"
+  - "[HIGH] CVE-2024-33601 in glibc (2.38-10.azl3) - glibc: netgroup cache may terminate daemon on memory allocation failure"
+  - "[MEDIUM] CVE-2023-4527 in glibc (2.38-10.azl3) - glibc: Stack read overflow in getaddrinfo in no-aaaa mode"
+  - "[MEDIUM] CVE-2023-4806 in glibc (2.38-10.azl3) - glibc: potential use-after-free in getaddrinfo()"
+  - "[MEDIUM] CVE-2024-33600 in glibc (2.38-10.azl3) - glibc: null pointer dereferences after failed netgroup cache insertion"
+  - "[LOW] CVE-2025-0395 in glibc (2.38-10.azl3) - glibc: buffer overflow in the GNU C Library's assert()"
